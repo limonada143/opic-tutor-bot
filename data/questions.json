@@ -1,0 +1,53 @@
+{
+  "version": "1.0",
+  "categories": {
+    "self_introduction": {
+      "label": "자기소개",
+      "description": "항상 1번으로 출제되는 고정 문제",
+      "questions": [
+        {
+          "id": "si_001",
+          "text": "Tell me about yourself.",
+          "difficulty": "required",
+          "tips": "직업, 거주지, 취미 등 3가지 이상 포함. 2-3분 분량."
+        }
+      ]
+    },
+    "daily_life": {
+      "label": "일상생활",
+      "description": "설문 기반 주제 (집, 여가, 쇼핑 등)",
+      "questions": []
+    },
+    "hobbies": {
+      "label": "취미/여가",
+      "description": "영화, 음악, 운동 등",
+      "questions": []
+    },
+    "travel": {
+      "label": "여행",
+      "description": "국내외 여행 경험",
+      "questions": []
+    },
+    "unexpected": {
+      "label": "돌발 주제",
+      "description": "설문에 없던 갑작스러운 주제",
+      "questions": []
+    },
+    "roleplay": {
+      "label": "롤플레이",
+      "description": "상황극 (전화, 예약, 불만 등)",
+      "questions": []
+    }
+  },
+  "mock_exam_template": {
+    "description": "실제 시험과 유사한 15문항 구성",
+    "structure": [
+      {"order": 1, "category": "self_introduction", "count": 1},
+      {"order": 2, "category": "daily_life", "count": 3},
+      {"order": 3, "category": "hobbies", "count": 3},
+      {"order": 4, "category": "unexpected", "count": 3},
+      {"order": 5, "category": "roleplay", "count": 3},
+      {"order": 6, "category": "travel", "count": 2}
+    ]
+  }
+}
