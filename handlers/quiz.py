@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from core.questions import get_categories, get_random_question, get_mock_exam_questions
 from core.session import get_state, Mode
-from core.grader import grade_answer, format_feedback
+from core.grader_router import grade_answer, format_feedback, format_fluency_summary
 from core.stt import transcribe
 from db.database import start_session, end_session, save_attempt, get_recent_mistakes, save_mistake
 from handlers.auth import restricted
@@ -26,7 +26,6 @@ async def _send_question(update: Update, question: dict, index: int = 0, total: 
     text = (
         f"🎯 {header}*질문*\n\n"
         f"{question['text']}\n\n"
-        f"_{question.get('tips', '영어로 자유롭게 답변하세요.')}_\n\n"
         "💬 텍스트 또는 🎙 음성 메시지로 답변하세요."
     )
     keyboard = InlineKeyboardMarkup([
@@ -125,6 +124,23 @@ async def _next_question(update, user_id: int, state) -> None:
         await _send_question(update, q)
 
 
+async def _after_answer(update, user_id: int, state) -> None:
+    """답변 후 처리: 모의고사는 자동으로 다음 문제, 연습 모드는 버튼으로 선택"""
+    msg = update.message or update.callback_query.message
+
+    if state.mode == Mode.MOCK:
+        await _next_question(update, user_id, state)
+    else:
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🔁 다시 하기", callback_data="retry"),
+                InlineKeyboardButton("➡️ 다음 문제", callback_data="next"),
+            ],
+            [InlineKeyboardButton("🛑 그만하기", callback_data="stop")],
+        ])
+        await msg.reply_text("다음 문제로 넘어갈까요?", reply_markup=keyboard)
+
+
 async def handle_text_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """텍스트 답변 처리"""
     user = update.effective_user
@@ -147,7 +163,6 @@ async def handle_text_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         await update.message.reply_text(feedback_text, parse_mode="Markdown")
 
-        # 실수 저장
         for imp in feedback.get("improvements", []):
             if imp.get("original"):
                 for etype in feedback.get("error_types", ["grammar"]):
@@ -165,7 +180,7 @@ async def handle_text_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
             feedback=feedback,
         )
 
-        await _next_question(update, user.id, state)
+        await _after_answer(update, user.id, state)
 
     except Exception as e:
         await update.message.reply_text(f"⚠️ 채점 중 오류가 발생했습니다: {e}")
@@ -192,8 +207,11 @@ async def handle_voice_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
             tmp_path = tmp.name
 
         await file.download_to_drive(tmp_path)
-        answer_text = await transcribe(tmp_path)
+        stt_result = await transcribe(tmp_path)
         os.unlink(tmp_path)
+
+        answer_text = stt_result["text"]
+        fluency = stt_result["fluency"]
 
         if not answer_text:
             await update.message.reply_text("음성을 인식하지 못했습니다. 다시 시도해주세요.")
@@ -203,10 +221,10 @@ async def handle_voice_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         question = state.current_question
         recent_mistakes = await get_recent_mistakes(user.id)
-        feedback = await grade_answer(question["text"], answer_text, recent_mistakes)
-        feedback_text = format_feedback(feedback, "voice")
+        feedback = await grade_answer(question["text"], answer_text, recent_mistakes, fluency=fluency)
 
-        await update.message.reply_text(feedback_text, parse_mode="Markdown")
+        await update.message.reply_text(format_fluency_summary(fluency), parse_mode="Markdown")
+        await update.message.reply_text(format_feedback(feedback, "voice"), parse_mode="Markdown")
 
         for imp in feedback.get("improvements", []):
             if imp.get("original"):
@@ -223,9 +241,10 @@ async def handle_voice_answer(update: Update, context: ContextTypes.DEFAULT_TYPE
             answer_text=answer_text,
             score=feedback.get("score", "?"),
             feedback=feedback,
+            fluency=fluency,
         )
 
-        await _next_question(update, user.id, state)
+        await _after_answer(update, user.id, state)
 
     except Exception as e:
         await update.message.reply_text(f"⚠️ 음성 처리 중 오류: {e}")
@@ -294,6 +313,16 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"• 마지막 학습: {last}"
         )
         await query.message.reply_text(text, parse_mode="Markdown")
+
+    elif data == "retry":
+        state = get_state(user.id)
+        if state.mode != Mode.IDLE and state.current_question:
+            await _send_question(update, state.current_question)
+
+    elif data == "next":
+        state = get_state(user.id)
+        if state.mode != Mode.IDLE and state.current_question:
+            await _next_question(update, user.id, state)
 
     elif data == "skip":
         state = get_state(user.id)
