@@ -90,18 +90,24 @@ Return only JSON, no other text."""
             part = part.strip()
             if part.startswith("json"):
                 part = part[4:].strip()
-            try:
-                return json.loads(part)
-            except json.JSONDecodeError:
-                continue
+            start = part.find("{")
+            end = part.rfind("}") + 1
+            if start != -1 and end > start:
+                try:
+                    return json.loads(part[start:end])
+                except json.JSONDecodeError:
+                    continue
 
     # { } 사이 JSON 직접 추출
     start = text.find("{")
     end = text.rfind("}") + 1
     if start != -1 and end > start:
-        return json.loads(text[start:end])
+        try:
+            return json.loads(text[start:end])
+        except json.JSONDecodeError as e:
+            raise Exception(f"JSON 파싱 실패. 오류: {e}\n모델 응답:\n{text[:500]}")
 
-    raise Exception(f"JSON 파싱 실패. 모델 응답:\n{text[:300]}")
+    raise Exception(f"JSON 파싱 실패. 모델 응답:\n{text[:500]}")
 
 
 def format_fluency_summary(fluency: dict) -> str:
